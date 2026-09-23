@@ -7667,7 +7667,7 @@ io.on('connection', (socket) => {
     if (!player || (player.score || 0) < cost) return;
     player.score -= cost;
     if (player._authUser) player._authUser.score = Math.max(0, (player._authUser.score || 0) - cost);
-    const baseHp = { 3: 250, 4: 180, 5: 100, 6: 850, 7: 350, 8: 500, 9: 750, 10: 400 }[building.type] || 100;
+    const baseHp = { 3: 250, 4: 180, 5: 100, 6: 850, 7: 350, 8: 500, 9: 750, 10: 100, 11: 1200 }[building.type] || 100;
     const tierHpMultiplier = [1, 1.6, 2.5, 4, 6.5, 10][newTier] || 1;
     const hpRatio = building.maxHp > 0 ? Math.max(0, Math.min(1, building.hp / building.maxHp)) : 1;
     building.tier = newTier;

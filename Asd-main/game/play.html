@@ -9483,7 +9483,7 @@ const UPGRADE_SCORE = [400, 1000, 2500, 6000, 15000]; // puan maliyeti (her tier
 const TIER_HP_MULS  = [1.0, 1.6, 2.5, 4.0, 6.5, 10.0];
 const TIER_DMG_MULS = [1.0, 1.5, 2.2, 3.5, 5.0, 8.0];
 const BTYPE_NAMES   = {3:'Kazık',4:'Değirmen',5:'Hız Pedi',6:'Tuzak',7:'Taret',8:'Duvar',9:'Kale',10:'Kaynak Makinesi',11:'Peluş Ayı'};
-const BTYPE_BASE_HP = {3:250,4:180,5:100,6:850,7:350,8:500,9:750,10:420,11:1200};
+const BTYPE_BASE_HP = {3:250,4:180,5:100,6:850,7:350,8:500,9:750,10:100,11:1200};
 const BUILD_TYPE_META = {
   10: { icon:'⚙️', color:'#ffb347', dark:'#281500', mid:'#693d00', name:'Kaynak Makinesi' },
   11: { icon:'🧸', color:'#f6a96b', dark:'#32170c', mid:'#74351c', name:'Peluş Ayı' }
@@ -10929,7 +10929,7 @@ function checkHits() {
 // GC allocation pressure (these were created fresh every frame before).
 // ============================================================
 const _RES_HP_COLORS = { wood:'#4caf50', stone:'#90a4ae', gold:'#ffd54f', apple:'#ef9a9a', bush:'#81c784', mushroom:'#ce93d8', crystal:'#80deea', hive:'#ffcc80' };
-const _BUILD_COSTS_MAP = { 3:[20,5], 4:[40,20], 5:[10,20], 6:[30,10], 7:[60,40], 8:[30,0], 9:[80,60], 10:[25,0] };
+const _BUILD_COSTS_MAP = { 3:[20,5], 4:[40,20], 5:[10,20], 6:[30,10], 7:[60,40], 8:[30,0], 9:[80,60], 10:[25,0], 11:[35,15] };
 
 // ============================================================
 // SCREEN SHAKE
@@ -11506,30 +11506,12 @@ function drawLowHpVignette(){
 }
 
 // ============================================================
-// CAMPFIRE UPDATE (HP regen aura)
+// RESOURCE MACHINE CLIENT STATE
 // ============================================================
-// _campfires[] — buildings.forEach(type===10) yerine bu listeyi kullan (O(1) per frame)
-// buildings push/splice ile senkronize tutulur
+// Type 10 is server-authoritative: resources arrive through self_state.
+// Keep the list for cleanup compatibility, but do not apply a local aura.
 let _campfires = [];
 function updateCampfires(){
-  for(let _cfi=0;_cfi<_campfires.length;_cfi++){const b=_campfires[_cfi];
-    if(b.hp<=0)continue;
-    const dx = player.x - b.x, dy = player.y - b.y;
-    if (Math.abs(dx) > 180 || Math.abs(dy) > 180) continue;
-    const dist=Math.hypot(dx,dy);
-    if(dist<180){
-      if(!b._healTimer)b._healTimer=0;
-      b._healTimer--;
-      if(b._healTimer<=0&&player.hp<player.maxHp){
-        b._healTimer=90;
-        const heal=Math.min(3,player.maxHp-player.hp);
-        player.hp+=heal; updateHpBar();
-        floatingTexts.push({x:player.x,y:player.y-38,text:'+'+heal+' 🔥',alpha:1,life:30,color:'#ff8844'});
-      }
-      // Emit fire particles
-      if(_qualityLevel>=1&&Math.random()<0.12) _spawnParticle(b.x+(Math.random()-0.5)*12,b.y+(Math.random()-0.5)*8,(Math.random()-0.5)*1.5,-1.2-Math.random()*2,2+Math.random()*3,20+Math.random()*15,Math.random()<0.5?'#ff8800':'#ffcc00');
-    }
-  }
 }
 function spawnGoldBurst(x,y){
   const n = _qualityLevel === 0 ? 1 : _qualityLevel === 1 ? 5 : 12;
@@ -19739,8 +19721,10 @@ function update(timestamp = 0) {
   }
 
   // Camera — ilk kare için anında konumlandır, sonra yumuşak takip (titremesiz render koordinatı ile)
-  const _camTargetX = (typeof window._debugCamTarget === 'object' && window._debugCamTarget) ? window._debugCamTarget.x : _playerRenderPos.x;
-  const _camTargetY = (typeof window._debugCamTarget === 'object' && window._debugCamTarget) ? window._debugCamTarget.y : _playerRenderPos.y;
+  const _rawCamTargetX = (typeof window._debugCamTarget === 'object' && window._debugCamTarget) ? window._debugCamTarget.x : _playerRenderPos.x;
+  const _rawCamTargetY = (typeof window._debugCamTarget === 'object' && window._debugCamTarget) ? window._debugCamTarget.y : _playerRenderPos.y;
+  const _camTargetX = Number.isFinite(_rawCamTargetX) ? _rawCamTargetX : player.x;
+  const _camTargetY = Number.isFinite(_rawCamTargetY) ? _rawCamTargetY : player.y;
   if (!_camReady && canvas.width > 0) {
     camX = _camTargetX - canvas.width / 2;
     camY = _camTargetY - canvas.height / 2;
@@ -19776,6 +19760,10 @@ function update(timestamp = 0) {
   // ===== RENDER =====
   // Guard: skip rendering if canvas has no size yet (deferred resize pending)
   if (!canvas.width || !canvas.height) return;
+  // A draw helper must not leak transforms into the next frame. Reset before
+  // the full-screen clear and rebuild the world transform below.
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   // ── Profiler: lightweight counters, entity snapshot every 30 frames ────
   window._perfOCCount = 0;
   window._perf.frameMs = _elapsed | 0;
@@ -19810,11 +19798,16 @@ function update(timestamp = 0) {
   ctx.translate(-camX, -camY);
   // === BIOME BACKGROUNDS — blitted from pre-built offscreen cache ============
   // One drawImage replaces 14+ gradient creates per frame → huge CPU/GPU win.
-  if (!_bgReady) {
-    ctx.fillStyle = '#274b2a';
-    ctx.fillRect(-WORLD, -WORLD, WORLD * 2, WORLD * 2);
-  } else {
-    ctx.drawImage(_bgCanvas, -WORLD, -WORLD, WORLD*2, WORLD*2);
+  ctx.fillStyle = '#274b2a';
+  ctx.fillRect(-WORLD, -WORLD, WORLD * 2, WORLD * 2);
+  if (_bgReady && _bgCanvas.width > 0 && _bgCanvas.height > 0) {
+    try {
+      ctx.drawImage(_bgCanvas, -WORLD, -WORLD, WORLD * 2, WORLD * 2);
+    } catch (error) {
+      // Keep the world visible if an offscreen cache becomes invalid after resize/context loss.
+      ctx.fillStyle = '#274b2a';
+      ctx.fillRect(-WORLD, -WORLD, WORLD * 2, WORLD * 2);
+    }
   }
 
   // ── MMORPG Town Hub, Animated Fixtures & Loot Beams ──
@@ -20027,7 +20020,7 @@ function update(timestamp = 0) {
     const _bFt = _bFb.type;
     if (_bFt === 5 || _bFt === 6) _vbGround.push(_bFb);
     else if (_bFt === 3 || _bFt === 4) _vbSolid.push(_bFb);
-    else if (_bFt === 7 || _bFt === 8 || _bFt === 9 || _bFt === 10) _vbTall.push(_bFb);
+    else if (_bFt === 7 || _bFt === 8 || _bFt === 9 || _bFt === 10 || _bFt === 11) _vbTall.push(_bFb);
   }
 
   // Layer 1: ground buildings (boost/trap)
@@ -20297,7 +20290,7 @@ function update(timestamp = 0) {
     if (_shadowOk) ctx.shadowBlur = 0;
 
     // 5. Üst Bilgi Rozeti (Modern Floating Glassmorphic Pill)
-    const _typeLabel = {3:'🗡️ Kazık (Spike)',4:'⚙️ Değirmen (Windmill)',5:'⚡ Hız Pedi (Boost)',6:'🪤 Ayı Tuzağı (Trap)',7:'🔫 Taret (Turret)',8:'🧱 Duvar (Wall)',9:'🏰 Şifa Kulesi (Heal)',10:'⚙️ Kaynak Makinesi'}[player.weapon] || 'Yapı';
+    const _typeLabel = {3:'🗡️ Kazık (Spike)',4:'⚙️ Değirmen (Windmill)',5:'⚡ Hız Pedi (Boost)',6:'🪤 Ayı Tuzağı (Trap)',7:'🔫 Taret (Turret)',8:'🧱 Duvar (Wall)',9:'🏰 Şifa Kulesi (Heal)',10:'⚙️ Kaynak Makinesi',11:'🧸 Peluş Ayı'}[player.weapon] || 'Yapı';
     const _costWoodOk = player.wood >= _cW;
     const _costStoneOk = player.stone >= _cS;
     const _woodStr = `🪵${_cW}`;
