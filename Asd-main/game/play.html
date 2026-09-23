@@ -8070,7 +8070,8 @@ function playSwingAnimation(actor, weapon, durationMs) {
   if (!actor) return null;
   const knob = Number(weapon) === 2 ? 2 : (Number(weapon) || actor.weapon || 1);
   const dur = Math.max(1, Number(durationMs) || ATTACK_DUR[knob] || 300);
-  const bodyAng = Number(actor.bodyAngle ?? actor.angle ?? 0);
+  const rawBodyAng = Number(actor.bodyAngle ?? actor.angle ?? 0);
+  const bodyAng = Number.isFinite(rawBodyAng) ? Math.atan2(Math.sin(rawBodyAng), Math.cos(rawBodyAng)) : 0;
 
   actor.weapon = knob;
   actor.bodyAngle = bodyAng;
@@ -8122,7 +8123,8 @@ function updateAttackAnimation(actor, dt) {
   if (actor === player) {
     actor.bodyAngle = actor.angle;
   }
-  const bodyAng = Number(actor.bodyAngle ?? actor.angle ?? 0);
+  const rawBodyAng = Number(actor.bodyAngle ?? actor.angle ?? 0);
+  const bodyAng = Number.isFinite(rawBodyAng) ? Math.atan2(Math.sin(rawBodyAng), Math.cos(rawBodyAng)) : 0;
   actor.bodyAngle = bodyAng;
 
   if (actor.isAttacking) {
@@ -17713,7 +17715,7 @@ let _cachedArmSkin = null, _cachedArmDark = '';
 function drawPlayer() {
   const rx = Number.isFinite(_playerRenderPos?.x) ? _playerRenderPos.x : (Number.isFinite(player.x) ? player.x : 0);
   const ry = Number.isFinite(_playerRenderPos?.y) ? _playerRenderPos.y : (Number.isFinite(player.y) ? player.y : 0);
-  const renderAngle = Number.isFinite(player.angle) ? player.angle : 0;
+  const renderAngle = Number.isFinite(player.angle) ? Math.atan2(Math.sin(player.angle), Math.cos(player.angle)) : 0;
   ctx.save(); ctx.translate(rx, ry);
 
   // Ground shadow — PERF: cache gradient (params only change if radius changes, which is rare)
@@ -17801,7 +17803,7 @@ function drawPlayer() {
     const t = globalTime * 0.08;
     const R = player.radius + 6;
     ctx.save();
-    ctx.rotate(-player.angle);
+    ctx.rotate(-renderAngle);
     if (_MOB_ASSETS.spider_ag_tuzak.complete && _MOB_ASSETS.spider_ag_tuzak.naturalWidth > 0) {
       ctx.globalAlpha = 0.90;
       ctx.drawImage(_MOB_ASSETS.spider_ag_tuzak, -R, -R, R * 2, R * 2);
@@ -17822,7 +17824,7 @@ function drawPlayer() {
     const _nowMs = Date.now();
     const _bc_y = -player.radius - 38 + Math.sin(_nowMs * 0.005) * 5;
     ctx.save();
-    ctx.rotate(-player.angle);
+    ctx.rotate(-renderAngle);
     ctx.font = '28px serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -23126,7 +23128,8 @@ function drawOtherPlayers() {
       ctx.fillStyle = drawOtherPlayers._shadowGrd;
       ctx.beginPath(); ctx.ellipse(4, 17, 31, 10, 0, 0, Math.PI*2); ctx.fill();
 
-      const _remoteBodyAngle = Number.isFinite(p.bodyAngle) ? p.bodyAngle : (Number.isFinite(p.angle) ? p.angle : 0);
+      const _remoteRawAngle = Number.isFinite(p.bodyAngle) ? p.bodyAngle : (Number.isFinite(p.angle) ? p.angle : 0);
+      const _remoteBodyAngle = Number.isFinite(_remoteRawAngle) ? Math.atan2(Math.sin(_remoteRawAngle), Math.cos(_remoteRawAngle)) : 0;
       ctx.rotate(_remoteBodyAngle);
 
       // ── Accessories drawn BEFORE body (behind body) ──────────────────────
@@ -23186,7 +23189,7 @@ function drawOtherPlayers() {
       drawAttackVfx(ctx, p);
       // ── Hat (centered above head, not rotating with player) ───────────────
       if (pAcc.s && pAcc.s !== 'h_none') {
-        ctx.save(); ctx.rotate(-(Number.isFinite(p.angle) ? p.angle : _remoteBodyAngle));
+        ctx.save(); ctx.rotate(-_remoteBodyAngle);
         drawPlayerHat(ctx, pAcc.s, globalTime, 35);
         ctx.restore();
       }
