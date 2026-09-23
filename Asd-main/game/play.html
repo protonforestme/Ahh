@@ -17711,8 +17711,9 @@ function _hexDimColor(hex, amt) {
 let _cachedArmSkin = null, _cachedArmDark = '';
 
 function drawPlayer() {
-  const rx = _playerRenderPos ? _playerRenderPos.x : player.x;
-  const ry = _playerRenderPos ? _playerRenderPos.y : player.y;
+  const rx = Number.isFinite(_playerRenderPos?.x) ? _playerRenderPos.x : (Number.isFinite(player.x) ? player.x : 0);
+  const ry = Number.isFinite(_playerRenderPos?.y) ? _playerRenderPos.y : (Number.isFinite(player.y) ? player.y : 0);
+  const renderAngle = Number.isFinite(player.angle) ? player.angle : 0;
   ctx.save(); ctx.translate(rx, ry);
 
   // Ground shadow — PERF: cache gradient (params only change if radius changes, which is rare)
@@ -17739,7 +17740,7 @@ function drawPlayer() {
     _pendingNameTags.push(_nto);
   }
 
-  ctx.rotate(player.angle);
+  ctx.rotate(renderAngle);
 
   // -- Halo (above everything, before rotation effects) --
   if (playerAcc.aksesuarlar === 'a_halo') drawPlayerHalo(ctx, globalTime);
@@ -17787,7 +17788,7 @@ function drawPlayer() {
 
   // 4. Şapka (başın üstünde, oyuncuyla dönmez)
   if (playerAcc.sapkalar && playerAcc.sapkalar !== 'h_none') {
-    ctx.save(); ctx.rotate(-player.angle);
+    ctx.save(); ctx.rotate(-renderAngle);
     drawPlayerHat(ctx, playerAcc.sapkalar, globalTime);
     ctx.restore();
   }
@@ -19723,8 +19724,10 @@ function update(timestamp = 0) {
   // Camera — ilk kare için anında konumlandır, sonra yumuşak takip (titremesiz render koordinatı ile)
   const _rawCamTargetX = (typeof window._debugCamTarget === 'object' && window._debugCamTarget) ? window._debugCamTarget.x : _playerRenderPos.x;
   const _rawCamTargetY = (typeof window._debugCamTarget === 'object' && window._debugCamTarget) ? window._debugCamTarget.y : _playerRenderPos.y;
-  const _camTargetX = Number.isFinite(_rawCamTargetX) ? _rawCamTargetX : player.x;
-  const _camTargetY = Number.isFinite(_rawCamTargetY) ? _rawCamTargetY : player.y;
+  const _camTargetX = Number.isFinite(_rawCamTargetX) ? _rawCamTargetX : (Number.isFinite(player.x) ? player.x : 0);
+  const _camTargetY = Number.isFinite(_rawCamTargetY) ? _rawCamTargetY : (Number.isFinite(player.y) ? player.y : 0);
+  if (!Number.isFinite(camX)) camX = _camTargetX - canvas.width / 2;
+  if (!Number.isFinite(camY)) camY = _camTargetY - canvas.height / 2;
   if (!_camReady && canvas.width > 0) {
     camX = _camTargetX - canvas.width / 2;
     camY = _camTargetY - canvas.height / 2;
@@ -23123,7 +23126,8 @@ function drawOtherPlayers() {
       ctx.fillStyle = drawOtherPlayers._shadowGrd;
       ctx.beginPath(); ctx.ellipse(4, 17, 31, 10, 0, 0, Math.PI*2); ctx.fill();
 
-      ctx.rotate(p.bodyAngle ?? p.angle ?? 0);
+      const _remoteBodyAngle = Number.isFinite(p.bodyAngle) ? p.bodyAngle : (Number.isFinite(p.angle) ? p.angle : 0);
+      ctx.rotate(_remoteBodyAngle);
 
       // ── Accessories drawn BEFORE body (behind body) ──────────────────────
       if (pAcc.a === 'a_halo')     drawPlayerHalo(ctx, globalTime, 35);
@@ -23182,7 +23186,7 @@ function drawOtherPlayers() {
       drawAttackVfx(ctx, p);
       // ── Hat (centered above head, not rotating with player) ───────────────
       if (pAcc.s && pAcc.s !== 'h_none') {
-        ctx.save(); ctx.rotate(-p.angle);
+        ctx.save(); ctx.rotate(-(Number.isFinite(p.angle) ? p.angle : _remoteBodyAngle));
         drawPlayerHat(ctx, pAcc.s, globalTime, 35);
         ctx.restore();
       }
