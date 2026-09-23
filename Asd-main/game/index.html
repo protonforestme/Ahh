@@ -4707,22 +4707,25 @@
                 <div id="home-leaderboard-list" class="mt-2 flex flex-col gap-1"></div>
             </div>
         </div>
-        <!-- Mobil Alt Bağlantılar & Telif (Kaydırmanın En Altında) -->
-        <div class="flex flex-col items-center gap-2.5 w-full mt-5 mb-4 pb-14 lg:pb-2">
-            <div class="flex items-center justify-center gap-4 text-white/70 font-black text-[11px]">
-                <span onclick="openModal('helpModal'); playSfx('click')" class="cursor-pointer hover:text-white transition">HOW TO PLAY</span>
-                <span class="text-white/30">•</span>
-                <span onclick="openModal('newsModal'); playSfx('click')" class="cursor-pointer hover:text-white transition">UPDATES</span>
+        <!-- Mobil Alt Bağlantılar & Telif (Ana ekranda tek görünür footer) -->
+        <footer class="relative z-10 w-full mt-5 mb-4 pb-14 lg:pb-4">
+            <div class="panel-inset p-2.5 sm:p-3">
+                <div class="flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-center text-white/70 font-black text-[10px] sm:text-[11px]">
+                    <span onclick="openModal('helpModal'); playSfx('click')" class="cursor-pointer hover:text-white transition">HOW TO PLAY</span>
+                    <span class="text-white/30">•</span>
+                    <span onclick="openModal('newsModal'); playSfx('click')" class="cursor-pointer hover:text-white transition">UPDATES</span>
+                    <span class="text-white/30">•</span>
+                    <a href="/privacy.html" class="hover:text-white transition">Privacy Policy</a>
+                    <span class="text-white/30">•</span>
+                    <a href="/terms.html" class="hover:text-white transition">Terms</a>
+                    <span class="text-white/30">•</span>
+                    <a href="/contact.html" class="hover:text-white transition">Contact</a>
+                    <span class="text-white/30">•</span>
+                    <a href="/ads.txt" class="hover:text-white transition">Ads.txt</a>
+                </div>
+                <div class="mt-2 text-center text-white/35 text-[9px] font-bold">ForestBrawl.io · All Rights Reserved</div>
             </div>
-            <div class="flex items-center justify-center gap-3 text-white/50 font-bold text-[10px]">
-                <a href="privacy.html" class="hover:text-white transition">Privacy Policy</a>
-                <span class="text-white/20">•</span>
-                <a href="terms.html" class="hover:text-white transition">Terms</a>
-                <span class="text-white/20">•</span>
-                <a href="contact.html" class="hover:text-white transition">Contact</a>
-            </div>
-            <span class="text-white/30 text-[9px] font-bold">ForestBrawl.io · All Rights Reserved</span>
-        </div>
+        </footer>
     </main>
 
     <!-- Mobil Alt Dock (iPhone & Android Floating Bottom Bar) -->
@@ -6148,13 +6151,31 @@
         function getOwnedItems() {
             try {
                 const authOwned = Array.isArray(_authUser?.ownedItems) ? _authUser.ownedItems : [];
+                const rawAuthUser = JSON.parse(localStorage.getItem('fb_auth_user') || '{}');
+                const authCachedOwned = (rawAuthUser && typeof rawAuthUser === 'object' && Array.isArray(rawAuthUser.ownedItems)) ? rawAuthUser.ownedItems : [];
                 const raw = JSON.parse(localStorage.getItem('fb_acc_owned') || '[]');
                 const localOwned = Array.isArray(raw) ? raw : [];
-                return [...new Set([...authOwned, ...localOwned].filter(Boolean).map(String))];
+                return [...new Set([...authOwned, ...authCachedOwned, ...localOwned].filter(Boolean).map(String))];
             } catch {
-                return Array.isArray(_authUser?.ownedItems) ? [...new Set(_authUser.ownedItems.map(String))] : [];
+                const authOwned = Array.isArray(_authUser?.ownedItems) ? _authUser.ownedItems : [];
+                const fallback = Array.isArray(JSON.parse(localStorage.getItem('fb_acc_owned') || '[]')) ? JSON.parse(localStorage.getItem('fb_acc_owned') || '[]') : [];
+                return [...new Set([...authOwned, ...fallback].filter(Boolean).map(String))];
             }
         }
+
+        function setOwnedItems(nextOwned) {
+            const normalized = normalizeOwnedItems(nextOwned);
+            localStorage.setItem('fb_acc_owned', JSON.stringify(normalized));
+            if (_authUser) _authUser.ownedItems = normalized;
+            try {
+                const rawAuthUser = JSON.parse(localStorage.getItem('fb_auth_user') || '{}');
+                const mergedAuth = rawAuthUser && typeof rawAuthUser === 'object' ? rawAuthUser : {};
+                localStorage.setItem('fb_auth_user', JSON.stringify({ ...mergedAuth, ...(_authUser || {}), ownedItems: normalized }));
+            } catch {
+                localStorage.setItem('fb_auth_user', JSON.stringify({ ...( _authUser || {}), ownedItems: normalized }));
+            }
+        }
+
         function getEquippedItems() {
             try {
                 const raw = JSON.parse(localStorage.getItem('fb_acc_equipped') || '{}');
@@ -7583,8 +7604,13 @@
             const itemList = (cat === 'pp' || cat === 'deriler') ? (window.SHOP_SKINS || REAL_SKINS) : cat === 'efektler' ? REAL_EFFECTS : cat === 'cerceveler' ? REAL_PROFILE_FRAMES : (COSMETIC_ITEMS_MAP[cat] || []);
             const item = itemList.find(entry => entry.id === id);
             if (!item || !isItemOwned(item)) {
-                if (!silent) triggerToast('Bu kozmetik henüz hesabında yok.', 'fa-lock');
-                return;
+                const repairedOwned = getOwnedItems();
+                if (repairedOwned.includes(id)) {
+                    addOwnedItem(id);
+                } else {
+                    if (!silent) triggerToast('Bu kozmetik henüz hesabında yok.', 'fa-lock');
+                    return;
+                }
             }
             const shopAcc = getEquippedItems();
             if (cat === 'deriler' || cat === 'pp') {
@@ -7700,7 +7726,7 @@
             const owned = getOwnedItems();
             if (!owned.includes(itemId)) {
                 owned.push(itemId);
-                localStorage.setItem('fb_acc_owned', JSON.stringify(owned));
+                setOwnedItems(owned);
             }
         }
 
@@ -8086,8 +8112,9 @@
                         triggerToast('Sunucu geçerli bir chest ödülü döndürmedi.', 'fa-triangle-exclamation');
                         return;
                     }
-                    localStorage.setItem('fb_acc_owned', JSON.stringify(normalizeOwnedItems(data.ownedItems)));
-                    _authUser = { ...(_authUser || {}), ownedItems: normalizeOwnedItems(data.ownedItems), diamonds: data.diamonds ?? data.newDiamonds };
+                    const owned = normalizeOwnedItems(data.ownedItems);
+                    setOwnedItems(owned);
+                    _authUser = { ...(_authUser || {}), ownedItems: owned, diamonds: data.diamonds ?? data.newDiamonds };
                     localStorage.setItem('fb_auth_user', JSON.stringify(_authUser));
                     openChestRewardSpin(chest, reward);
                     renderCosmeticsOwnedGrid();
@@ -8152,7 +8179,7 @@
                         return;
                     }
                     const serverOwned = normalizeOwnedItems(data.ownedItems);
-                    localStorage.setItem('fb_acc_owned', JSON.stringify(serverOwned));
+                    setOwnedItems(serverOwned);
                     if (typeof data.newDiamonds === 'number') setPlayerDiamonds(data.newDiamonds);
                     _authUser = { ...(_authUser || {}), ownedItems: serverOwned, diamonds: data.diamonds ?? data.newDiamonds };
                     localStorage.setItem('fb_auth_user', JSON.stringify(_authUser));
